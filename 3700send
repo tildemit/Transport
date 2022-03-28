@@ -33,6 +33,7 @@ class Sender:
         waiting_ack = 0
         initialSend = True
         rtt = 1
+        shrinkFlag = True
         while True:
             sockets = [self.socket, sys.stdin] if not self.waiting else [self.socket]
 
@@ -50,11 +51,11 @@ class Sender:
                                 self.send(self.stored_data[i])
                                 self.stored_data.pop(i)
                                 windowSent = windowSent / 2
+                                shrinkFlag = False
                                 break
                         if (i == len(self.stored_data) - 1):
                             keepGoing = False
-
-
+ 
                 if conn == self.socket:
                     k, addr = conn.recvfrom(65535)
                     endTime = time.time()
@@ -71,7 +72,7 @@ class Sender:
                             continue
                     
                         if (msg["seq_num"] not in self.received_nums):
-                                rtt = (endTime - msg["start_time"]) /2
+                                rtt = (endTime - msg["start_time"]) / 2
                                 self.received_nums.append(msg["seq_num"])
                                 for i in range(len(self.stored_data)):
                                     if (self.stored_data[i]["seq_num"] == msg["seq_num"]):
@@ -88,9 +89,14 @@ class Sender:
                     if (initialSend):
                         for i in range(4):
                             data = sys.stdin.read(DATA_SIZE)
+                            breakFlag = False
                             if len(data) == 0:
-                                self.log("All done!")
-                                sys.exit(0)
+                                self.send({"type": "done"})
+                                self.waiting = True
+                                self.waitingDone = True
+                                breakFlag = True
+                            if (breakFlag):
+                                break
                             initialSend = False
                             self.waiting = True
                             startTime = time.time()
@@ -99,7 +105,6 @@ class Sender:
                             self.stored_data.append(msg)
                             seq_num_send = seq_num_send + 1
                             self.send(msg)
-                            continue
 
 
                     if (self.waitingDone):
@@ -111,9 +116,6 @@ class Sender:
 
                     data = sys.stdin.read(DATA_SIZE)
                     if len(data) == 0:
-                        for msg in self.stored_data:
-                            self.send(msg)
-                        self.stored_data.clear()
                         self.send({"type": "done"})
                         self.waiting = True
                         self.waitingDone = True
