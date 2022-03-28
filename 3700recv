@@ -2,12 +2,6 @@
 
 import argparse, socket, time, json, select, struct, sys, math, operator, zlib
 
-MSG_SIZE = 1500 #MTU
-TIMEOUT = 30 #socket timeout
-BUFFERED_DATA = {} #buffer of data we have received
-BYTES_ADDED = 0 #how many bytes we have added to output
-LAST_ACKED = None #seq num of last packet we acked
-TOTAL_MSG_LENGTH = None #how many bytes we need in total, will be sent over from sender
 
 class Receiver:
     def __init__(self):
@@ -53,7 +47,7 @@ class Receiver:
                         self.send({"type": "done"})
                         break
             
-                    if (not "data" or "checksum" in msg):
+                    if (not "data" in msg):
                         continue
 
                     if (msg["checksum"] != zlib.adler32(bytes((msg["data"] + str(msg["seq_num"])).encode()))):
@@ -64,7 +58,7 @@ class Receiver:
                                 self.stored_data.append(msg)
                         
                 # Always send back an ack
-                    self.ack_num = self.ack_num + 1
+                    self.ack_num = self.ack_num + (self.ack_num / 2)
                     self.send({"type": "ack", "ack_num": self.ack_num, "seq_num": msg["seq_num"], "checksum": (str(msg["seq_num"]) + str(self.ack_num)), "start_time": msg["start_time"] })
 
         return
