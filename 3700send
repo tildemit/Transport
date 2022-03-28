@@ -38,6 +38,7 @@ class Sender:
 
             socks = select.select(sockets, [], [], 0.1)[0]
             for conn in socks:
+                endTime = time.time()
                 keepGoing = True
                 while (keepGoing):
                     if (len(self.stored_data) == 0):
