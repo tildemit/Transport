@@ -64,7 +64,7 @@ class Receiver:
                                 self.stored_data.append(msg)
                         
                 # Always send back an ack
-                    self.ack_num = self.ack_num + 1
+                    self.ack_num = self.ack_num + (self.ack_num / 2)
                     self.send({"type": "ack", "ack_num": self.ack_num, "seq_num": msg["seq_num"], "checksum": (str(msg["seq_num"]) + str(self.ack_num)), "start_time": msg["start_time"] })
 
         return
