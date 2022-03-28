@@ -113,6 +113,7 @@ class Sender:
                     if len(data) == 0:
                         for msg in self.stored_data:
                             self.send(msg)
+                        self.stored_data.clear()
                         self.send({"type": "done"})
                         self.waiting = True
                         self.waitingDone = True
