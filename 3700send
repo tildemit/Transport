@@ -1,0 +1,138 @@
+#!/usr/bin/env -S python3 -u
+
+import argparse, socket, time, json, select, struct, sys, math, zlib
+
+DATA_SIZE = 1375
+
+class Sender:
+    def __init__(self, host, port):
+        self.host = host
+        self.remote_port = int(port)
+        self.log("Sender starting up using port %s" % self.remote_port)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.bind(('0.0.0.0', 0))
+        self.waiting = False
+        self.received_nums = []
+        self.stored_data = []
+        self.waitingDone = False
+
+    def log(self, message):
+        sys.stderr.write(message + "\n")
+        sys.stderr.flush()
+
+    def send(self, message):
+        self.socket.sendto(json.dumps(message).encode('utf-8'), (self.host, self.remote_port))
+
+    def run(self):
+        canSend = 4
+        windowSent = 4
+        seq_num_send = 0
+        startTime = 0
+        endTime = 0
+        inNetwork = False
+        waiting_ack = 0
+        initialSend = True
+        rtt = 1
+        while True:
+            sockets = [self.socket, sys.stdin] if not self.waiting else [self.socket]
+
+            socks = select.select(sockets, [], [], 0.1)[0]
+            for conn in socks:
+                keepGoing = True
+                while (keepGoing):
+                    if (len(self.stored_data) == 0):
+                        keepGoing = False
+                    for i in range(len(self.stored_data)):
+                        if (canSend == windowSent):
+                            keepGoing = False
+                            break
+                        if (endTime - self.stored_data[i]["start_time"] > 2 * rtt):
+                                self.send(self.stored_data[i])
+                                self.stored_data.pop(i)
+                                windowSent = windowSent / 2
+                                break
+                        if (i == len(self.stored_data) - 1):
+                            keepGoing = False
+
+
+                if conn == self.socket:
+                    k, addr = conn.recvfrom(65535)
+                    endTime = time.time()
+                    try:
+                        msg = json.loads(k.decode('utf-8'))
+                    except ValueError as e:
+                        continue
+                    else:
+                        if (msg["type"] == "done"):
+                            self.log("All done!")
+                            sys.exit(0)
+
+                        if (msg["checksum"] != str(msg["seq_num"]) + str(msg["ack_num"])):
+                            continue
+                    
+                        if (msg["seq_num"] not in self.received_nums):
+                                rtt = (endTime - msg["start_time"]) /2
+                                self.received_nums.append(msg["seq_num"])
+                                for i in range(len(self.stored_data)):
+                                    if (self.stored_data[i]["seq_num"] == msg["seq_num"]):
+                                        self.stored_data.pop(i)
+                                        break
+                                self.log("Received message '%s'" % msg)
+                                windowSent = windowSent + 1
+                                self.waiting = False
+                                canSend = canSend - 1
+                        self.waiting = False
+
+                    
+                elif conn == sys.stdin:
+                    if (initialSend):
+                        for i in range(4):
+                            data = sys.stdin.read(DATA_SIZE)
+                            if len(data) == 0:
+                                self.log("All done!")
+                                sys.exit(0)
+                            initialSend = False
+                            self.waiting = True
+                            startTime = time.time()
+                            msg = { "type": "msg", "data": data, "seq_num": seq_num_send, "start_time": startTime, 
+                            "checksum": zlib.adler32(bytes((data + str(seq_num_send)).encode()))}
+                            self.stored_data.append(msg)
+                            seq_num_send = seq_num_send + 1
+                            self.send(msg)
+                            continue
+
+
+                    if (self.waitingDone):
+                        continue
+
+                    if (canSend == windowSent):
+                        self.waiting = True
+                        continue
+
+                    data = sys.stdin.read(DATA_SIZE)
+                    if len(data) == 0:
+                        for msg in self.stored_data:
+                            self.send(msg)
+                        self.send({"type": "done"})
+                        self.waiting = True
+                        self.waitingDone = True
+                        continue
+                    startTime = time.time()
+                    msg = { "type": "msg", "data": data, "seq_num": seq_num_send, "start_time": startTime,
+                    "checksum": zlib.adler32(bytes((data + str(seq_num_send)).encode()))}
+                    self.stored_data.append(msg)
+                    seq_num_send = seq_num_send + 1
+                    self.send(msg)
+                    canSend = canSend + 1
+                    self.waiting = True
+                    continue
+                    
+        return
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='send data')
+    parser.add_argument('host', type=str, help="Remote host to connect to")
+    parser.add_argument('port', type=int, help="UDP port number to connect to")
+    args = parser.parse_args()
+    sender = Sender(args.host, args.port)
+    sender.run()
