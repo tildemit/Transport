@@ -24,8 +24,8 @@ class Sender:
         self.socket.sendto(json.dumps(message).encode('utf-8'), (self.host, self.remote_port))
 
     def run(self):
-        canSend = 4
-        windowSent = 4
+        canSend = 5
+        windowSent = 5
         seq_num_send = 0
         startTime = 0
         endTime = 0
@@ -86,7 +86,7 @@ class Sender:
                     
                 elif conn == sys.stdin:
                     if (initialSend):
-                        for i in range(4):
+                        for i in range(5):
                             data = sys.stdin.read(DATA_SIZE)
                             if len(data) == 0:
                                 self.log("All done!")
