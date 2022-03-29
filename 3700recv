@@ -13,8 +13,13 @@ class Receiver:
         self.remote_host = None
         self.remote_port = None
         
-        self.received_nums = [-1]
+        # Received sequence numbers
+        self.received_nums = []
+
+        # Stored data messages to print out all at once at the end
         self.stored_data = []
+
+        # Acknowledgement extra data field to add to the checksum
         self.ack_num = 2
 
     def send(self, message):
@@ -35,27 +40,39 @@ class Receiver:
                 if self.remote_host is None:
                     self.remote_host = addr[0]
                     self.remote_port = addr[1]
+
+                # Try json.loads. If it fails, the data is corrupt and we ignore this message
                 try:
                     msg = json.loads(data.decode('utf-8'))
                 except ValueError as e:
                     continue
                 else:
+                    # If we receive a "done" message from the sender, sort the messages in the
+                    # list of stored messages by sequence number. Then, print out the data in
+                    # order and send a done message back to the sender
                     if (msg["type"] == "done"):
                         self.stored_data = sorted(self.stored_data, key=lambda d: d['seq_num']) 
                         for msg in self.stored_data:
                             print(msg["data"], end='', flush=True)
                         self.send({"type": "done"})
                         break
-            
+                    
+                    # Verifying the message has correct fields, else it is corrupted and we ignore
                     if (not "data" in msg or not "checksum" in msg):
                         continue
-
+                    
+                    # Cross-reference the messages checksum with the checksum calculation. If they
+                    # are not equal ignore this message
                     if (msg["checksum"] != zlib.adler32(bytes((msg["data"] + str(msg["seq_num"])).encode()))):
                         continue
+
+                    # If the sequence number is not in the list of sequence numbers, the message is not a duplicate
+                    # and we don't have to ignore it
                     seq_num_rec = msg["seq_num"]
                     if (seq_num_rec not in self.received_nums):
-                                self.received_nums.append(seq_num_rec)
-                                self.stored_data.append(msg)
+                        # Append the sequence number and the data message to their respective lists                             
+                        self.received_nums.append(seq_num_rec)
+                        self.stored_data.append(msg)
                         
                 # Always send back an ack
                     self.ack_num = self.ack_num + 1
