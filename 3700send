@@ -12,8 +12,15 @@ class Sender:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind(('0.0.0.0', 0))
         self.waiting = False
+
+        # List of received sequence number acknowledgements
         self.received_nums = []
+
+        # List of data that has not been acknowledged, that potentially needs to be
+        # retransmitted
         self.stored_data = []
+
+        # Flag to indicate if we we are waiting for a "done" message from the receiver
         self.waitingDone = False
 
     def log(self, message):
@@ -24,20 +31,28 @@ class Sender:
         self.socket.sendto(json.dumps(message).encode('utf-8'), (self.host, self.remote_port))
 
     def run(self):
+        # Number of messages currently send that haven't been ack'd
         canSend = 4
+        # The current window size
         windowSent = 4
+        # The current sequence number of our outgoing messages
         seq_num_send = 0
+        # Variable to set the starting time for calculating RTT
         startTime = 0
+        # Variable to set the ending time for calculating RTT
         endTime = 0
-        inNetwork = False
-        waiting_ack = 0
+        # Flag to indicate the initial send of 4 messages
         initialSend = True
+        # Current value of RTT
         rtt = 1
         while True:
             sockets = [self.socket, sys.stdin] if not self.waiting else [self.socket]
 
             socks = select.select(sockets, [], [], 0.1)[0]
             for conn in socks:
+                # Loop through the list of stored messages and check if the time without an ack
+                # for that message is over the RTO. If so, retransit the message. Keep looping
+                # until no more messages need to be retransmitted in this iteration
                 endTime = time.time()
                 keepGoing = True
                 while (keepGoing):
@@ -47,7 +62,7 @@ class Sender:
                         if (canSend == windowSent):
                             keepGoing = False
                             break
-                        if (endTime - self.stored_data[i]["start_time"] > 2.21 * rtt):
+                        if (endTime - self.stored_data[i]["start_time"] > 1.75 * rtt):
                                 self.send(self.stored_data[i])
                                 self.stored_data.pop(i)
                                 windowSent = windowSent / 2
@@ -58,26 +73,35 @@ class Sender:
 
                 if conn == self.socket:
                     k, addr = conn.recvfrom(65535)
+                    # Try json.loads. If it fails, the ack is corrupted and we can ignore
                     try:
                         msg = json.loads(k.decode('utf-8'))
                     except ValueError as e:
                         continue
                     else:
+                        # If the type is "done", exit the program
                         if (msg["type"] == "done"):
                             self.log("All done!")
                             sys.exit(0)
 
+                        # Check if the calculated checksum matches the checksum field. If not,
+                        # ignore the message
                         if (msg["checksum"] != str(msg["seq_num"]) + str(msg["ack_num"])):
                             continue
                     
+                        # If the sequence number is not in the list, the message has been
+                        # ack'd and we can increase our window
                         if (msg["seq_num"] not in self.received_nums):
                                 rtt = (endTime - msg["start_time"]) /2
                                 self.received_nums.append(msg["seq_num"])
+                                # Pop out the message corresponding to the sequence number
                                 for i in range(len(self.stored_data)):
                                     if (self.stored_data[i]["seq_num"] == msg["seq_num"]):
                                         self.stored_data.pop(i)
                                         break
                                 self.log("Received message '%s'" % msg)
+                                # Increase the window size and lower the count of messages in
+                                # the network
                                 windowSent = windowSent + 1
                                 self.waiting = False
                                 canSend = canSend - 1
@@ -85,30 +109,40 @@ class Sender:
 
                     
                 elif conn == sys.stdin:
+                    # In the initial send, send 4 messages in a loop
                     if (initialSend):
                         for i in range(4):
                             data = sys.stdin.read(DATA_SIZE)
                             if len(data) == 0:
                                 self.log("All done!")
                                 sys.exit(0)
+                            # Set initialSend to False permanently
                             initialSend = False
                             self.waiting = True
+                            # Start the timer for calculating RTT
                             startTime = time.time()
+                            # Form the packet as a dictionary. There is a field for the type, a field for the
+                            # sequence number, the time when it was sent, and the checksum (made using adler32 
+                            # formula and takes in the data as well as the sequence number)
                             msg = { "type": "msg", "data": data, "seq_num": seq_num_send, "start_time": startTime, 
                             "checksum": zlib.adler32(bytes((data + str(seq_num_send)).encode()))}
+                            # Send the message and continue to wait 
                             self.stored_data.append(msg)
                             seq_num_send = seq_num_send + 1
                             self.send(msg)
                             continue
 
-
+                    # If the waitingDone flag is active, we are waiting for a "done" message and do nothing
+                    # until we get it
                     if (self.waitingDone):
                         continue
-
+                    
+                    # If the number of unack'd messages equals the window size, continually wait for an ack
                     if (canSend == windowSent):
                         self.waiting = True
                         continue
 
+                    # Read in and send the data as we did in the initial send
                     data = sys.stdin.read(DATA_SIZE)
                     if len(data) == 0:
                         for msg in self.stored_data:
