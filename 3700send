@@ -62,7 +62,7 @@ class Sender:
                         if (canSend == windowSent):
                             keepGoing = False
                             break
-                        if (endTime - self.stored_data[i]["start_time"] > 2.26 * rtt):
+                        if (endTime - self.stored_data[i]["start_time"] > 2.24 * rtt):
                                 self.send(self.stored_data[i])
                                 self.stored_data.pop(i)
                                 windowSent = windowSent / 2
@@ -92,7 +92,7 @@ class Sender:
                         # If the sequence number is not in the list, the message has been
                         # ack'd and we can increase our window
                         if (msg["seq_num"] not in self.received_nums):
-                                rtt = (((endTime - msg["start_time"]) / 2) + rtt) / 2
+                                rtt = (((endTime - msg["start_time"]))) / 2
                                 self.received_nums.append(msg["seq_num"])
                                 # Pop out the message corresponding to the sequence number
                                 for i in range(len(self.stored_data)):
