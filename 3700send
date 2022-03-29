@@ -32,9 +32,9 @@ class Sender:
 
     def run(self):
         # Number of messages currently send that haven't been ack'd
-        canSend = 4
+        canSend = 5
         # The current window size
-        windowSent = 4
+        windowSent = 5
         # The current sequence number of our outgoing messages
         seq_num_send = 0
         # Variable to set the starting time for calculating RTT
@@ -112,7 +112,7 @@ class Sender:
                     # In the initial send, send 4 messages in a loop
                     if (initialSend):
                         breakFlag = False
-                        for i in range(4):
+                        for i in range(5):
                             if (breakFlag):
                                 break
                             data = sys.stdin.read(DATA_SIZE)
